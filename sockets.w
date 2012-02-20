@@ -36,14 +36,14 @@ data hierarchy.
 The program itself is layed out like so:
 
 @p 
-@<Foreign code initialization@>
+@<Foreign code utilities@>
 @<Foreign constants@>
 @<Foreign functions@>
+@<Foreign code initialization@>
 @<Datatype definitions@>
-@<Procedures for manipulating or supporting datatypes@>
 @<Socket constants@>
 @<Internal procedure definitions@>
-@<Exported procedure definitions@>
+@<External procedure definitions@>
 @<Register pre-defined socket domains@>
 
 @ Because we are working at the system level, we need to know the 
@@ -51,9 +51,12 @@ operating system on which we are working. Practically speaking,
 when it comes to sockets, this really comes down to a question of
 whether we are working on Windows or now.
 
-@c () => (windows?)
-@<Foreign code initialization@>=
+@c () => (windows? if-windows?)
+@<Foreign code utilities@>=
 (meta define (windows?) (memq (machine-type) '(i3nt ti3nt)))
+(define-syntax (if-windows? x)
+  (syntax-case x ()
+    [(_ c a) (if (windows?) #'c #'a)]))
 
 @ The following is an R6RS library that encapsulate this library 
 for use by external R6RS programs.
@@ -122,7 +125,8 @@ Windows does not support UNIX sockets.
 To handle these situtations, the following procedure is run whenever
 there is a feature that is unsupported on a particular system.
 
-@p
+@c () => (unsupported-feature)
+@<Foreign code utilities@>=
 (define (unsupported-feature feature)
   (error feature "this feature is not supported on this platform"))
 
@@ -140,7 +144,7 @@ store this information directly.
 @c () => (make-socket socket? socket 
 	  socket-nonblocking? socket-nonblocking?-set!
 	  socket-fd socket-domain socket-type socket-protocol)
-@<Datatype Definitions@>=
+@<Datatype definitions@>=
 (define-record-type socket
   (fields fd domain type protocol (mutable nonblocking?))
   (protocol
@@ -162,7 +166,7 @@ api level option,  otherwise it expects a proper option level.
 @c () => (socket-option? make-socket-option socket-option
           socket-option-foreign-size socket-option-foreign-maker
 	  socket-option-foreign-converter socket-option-id socket-option-level)
-@<Datatype Definitions@>=
+@<Datatype definitions@>=
 (define-record-type socket-option
   (fields level id foreign-size foreign-maker foreign-converter)
   (protocol 
@@ -184,7 +188,7 @@ api level option,  otherwise it expects a proper option level.
 This will bind |name|, |make-name|, and |name?|.
 
 @c () => (define-socket-option-type)
-@<Datatype Definitions@>=
+@<Datatype definitions@>=
 (define-syntax define-socket-option-type
   (syntax-rules ()
     [(_ name level)
@@ -198,12 +202,12 @@ This will bind |name|, |make-name|, and |name?|.
 |udp(7)|, and |raw(7)|.  I have added the ip option as well because ip
 options are often applicable to  the above.
 
-@c ($ipproto-tcp $ipproto-udp $ipproto-raw $ipproto-ip) => 
+@c () =>
    (make-tcp-option make-udp-option make-raw-option make-ip-option
     tcp-option? udp-option? raw-option? ip-option?
     define-socket-option-type
     tcp-option udp-option raw-option ip-option)
-@<Datatype Definitions@>=
+@<Datatype definitions@>=
 (define-socket-option-type tcp-option $ipproto-tcp)
 (define-socket-option-type udp-option $ipproto-udp)
 (define-socket-option-type raw-option $ipproto-raw)
@@ -216,7 +220,7 @@ origins of transmissions.
 All socket address data types are subtypes of |socket-address|es.
 
 @c () => (socket-address? socket-address socket-address-converter)
-@<Datatype Definitions@>=
+@<Datatype definitions@>=
 (define-record-type socket-address (fields converter))
 
 @ When passing socket addresses to foreign procedures, 
@@ -243,9 +247,9 @@ creating it. This is defined as |foreign-address-size|,
 but it is defined as part of the record definition for 
 socket domains below."
 
-@c (socket-address-converter socket-domain-extractor) => 
+@c () => 
    (socket-address->foreign foreign->socket-address)
-@<Procedures for manipulating or supporting datatypes@>=
+@<Datatype definitions@>=
 (define (socket-address->foreign sock-addr)
   ((socket-address-converter sock-addr) sock-addr))
 (define (foreign->socket-address domain addr addr-len)
@@ -255,10 +259,9 @@ socket domains below."
 UNIX domain sockets have addresses that are just paths, which in turn
 are simply strings.
 
-@c (unix-address->foreign) => 
-   (unix-address? make-unix-address unix-address-path
-    unix-address->foreign foreign->unix-address unix-address)
-@<Datatype Definitions@>=
+@c () => 
+   (unix-address? make-unix-address unix-address-path unix-address)
+@<Datatype definitions@>=
 (define-record-type unix-address
   (parent socket-address)
   (protocol
@@ -272,17 +275,19 @@ of the |sockaddr_un| structure.
 Converting the foreign address back to a UNIX address 
 can be done by grabbing the vector elements of the range from 
 the start of the path to the first null.
-  
-@c (make-foreign-unix-address unix-address-path make-unix-address) =>
+
+@c () =>
    (unix-address->foreign foreign->unix-address)
-@<Procedures for manipulating or supporting datatypes@>=
+@<Datatype definitions@>=
 (define (unix-address->foreign addr) 
-  (when (windows?) (unsupported-feature 'unix-sockets))
-  (values (make-foreign-unix-address (unix-address-path addr))
-	  size-of/sockaddr-un))
+  (if-windows? 
+    (unsupported-feature 'unix-sockets)
+    (values (make-foreign-unix-address (unix-address-path addr))
+	    size-of/sockaddr-un)))
 (define (foreign->unix-address addr addr-len)
-  (when (windows?) (unsupported-feature 'unix-sockets))
-  (make-unix-address (foreign-unix-address-path addr)))
+  (if-windows?
+    (unsupported-feature 'unix-sockets)
+    (make-unix-address (foreign-unix-address-path addr))))
 
 @* 3 IPV4 Internet Socket Addresses.
 Internet addresses are represented by an IP address and a port
@@ -290,15 +295,12 @@ number. The highest eight bits of the ip address should be the first
 octet of the ip address, and so forth. The port value is a 16-bit
 unsigned integer.
 
-@c (internet-address->foreign) => 
+@c () => 
    (internet-address internet-address?
     make-internet-address
     internet-address-ip
-    internet-address-port
-    string->internet-address
-    internet-address->string
-    string->ipv4)
-@<Datatype Definitions@>=
+    internet-address-port)
+@<Datatype definitions@>=
 (define-record-type internet-address 
   (parent socket-address)
   (protocol 
@@ -306,10 +308,10 @@ unsigned integer.
       (lambda (i p) ((n internet-address->foreign) i p))))
   (fields ip port))
 
-@ @c (internet-address-port internet-address-ip make-internet-address) 
+@ @c () 
      =>
      (internet-address->foreign foreign->internet-address)
-@<Procedures for manipulating or supporting datatypes@>=
+@<Datatype definitions@>=
 (define (internet-address->foreign addr)
   (values 
     (make-foreign-ipv4-address
@@ -327,7 +329,7 @@ Usually internet addresses are given as a colon delimited ip
 address string and a port number. |string->internet-address| converts 
 this to a proper internet address structure.
 
-@c (make-internet-address internet-address-ip internet-address-port) => 
+@c () => 
    (string->internet-address)
 @<External procedure definitions@>=
 (define (string->internet-address s)
@@ -359,9 +361,7 @@ in big endian or network byte order.
 @c () => (string->ipv4)
 @<External procedure definitions@>=
 (define (string->ipv4 s)
-  (let ([bytes (map string->number 
-                 (string-tokenize s 
-                   (char-set-complement (char-set #\.))))])
+  (let ([bytes (map string->number (split-string s #\.))])
     (assert (= 4 (length bytes)))
     (fold-left
       (lambda (s x)
@@ -370,10 +370,26 @@ in big endian or network byte order.
       0
       bytes)))
 
+@ Both of the above utilities rely on a string splitting function.  We'll 
+define that here.
+
+@c () => (split-string)
+@<Internal procedure definitions@>=
+(define (split-string s c)
+  (define (debuf buf) (list->string (reverse buf)))
+  (define (split lst res buf)
+    (cond
+      [(null? lst) (reverse (cons (debuf buf) res))]
+      [(char=? c (car lst)) (split (cdr lst) (cons (debuf buf) res) '())]
+      [else (split (cdr lst) res (cons (car lst) buf))]))
+  (if (fxzero? (string-length s))
+      '()
+      (split (string->list s) '() '())))
+
 @ The reverse procedure |internet-address->string| is more 
 straightforward.
 
-@c (internet-address-ip internet-address-port) =>
+@c () =>
    (internet-address->string)
 @<External procedure definitions@>=
 (define (internet-address->string addr)
@@ -395,6 +411,22 @@ straightforward.
              [else (number->string x)]))
           port
           res)])))
+
+@* Socket Constants.
+Procedures such as |create-socket| accept records which wrap 
+numeric constant values for passing into the FFI. 
+These constants are limited with what is built in to have the 
+widest acceptance and portability, but if the user wishes to use 
+more values, he can do so by using the appropriate make form.
+This requires that the user know the Operating specific constant 
+value that should be used in the FFI.
+
+Every constant type is a child of the |socket-constant| type.
+
+@c () => (socket-constant make-socket-constant socket-constant?
+	  socket-constant-value)
+@<Datatype definitions@>=
+(define-record-type socket-constant (fields (immutable value)))
 
 @* Address Information.
 The |get-address-info| procedure returns a list of |address-info|
@@ -442,7 +474,7 @@ To grab the address we make our foreign buffers, call
 |$getaddrinfo|,  check for errors, and then convert the foreign
 address foreign-integer to a Scheme structure.
 
-@c (socket-domain? socket-type? socket-protocol? address-info-option?) 
+@c () 
    => (get-address-info)
 @<External procedure definitions@>=
 (define get-address-info
@@ -452,15 +484,15 @@ address foreign-integer to a Scheme structure.
      (%get-address-info node service dom type proto flags)]))
 (define (%get-address-info node service domain type protocol flags)
   @<Check get-address-info argument types@>
-  (let ([addr-list-ptr (make-foreign-pointer)]
+  (let ([alp (make-foreign-pointer)]
         [hints @<Build address information hints@>]
         [service (or (and (string? service) service) 
                      (number->string service 10))])
-    (let ([res ($getaddrinfo node service hints addr-list-ptr)])
+    (let ([res ($getaddrinfo node service hints alp)])
       (if (zero? res)
           (values @<Convert foreign address information list@>
 		  (foreign-address-info-canonical-name
-		   (foreign-pointer-value addr-list-ptr)))
+		   (foreign-pointer-value alp)))
           (error 'get-address-info
             "getaddrinfo() failed with code"
             `(code ,res)
@@ -476,8 +508,7 @@ work in the same way, but they must all be values for which
 a service name string, integer number string identifying a valid port, 
 or a positive integer representing a valid port.
 
-@c (node service domain type protocol flags
-    socket-domain? socket-type? socket-protocol? address-info-option?)
+@c (node service domain type protocol flags)
 @<Check get-address-info argument types@>=
 (assert (or (not domain) (socket-domain? domain)))
 (assert (or (not type) (socket-type? type)))
@@ -494,7 +525,7 @@ or a positive integer representing a valid port.
 
 @ There are a few built in address info options.
 
-@c (%ai/canonname %ai/numerichost %ai/passive) => 
+@c () => 
    (address-info/canonical-name address-info/numeric-host
     address-info/passive)
 @<Socket constants@>=
@@ -551,22 +582,6 @@ the foreign accessors and loop over the linked list.
          (if entry (cons entry res) res))])
   [(zero? ptr) (reverse res)])
  
-@* Socket Constants.
-Procedures such as |create-socket| accept records which wrap 
-numeric constant values for passing into the FFI. 
-These constants are limited with what is built in to have the 
-widest acceptance and portability, but if the user wishes to use 
-more values, he can do so by using the appropriate make form.
-This requires that the user know the Operating specific constant 
-value that should be used in the FFI.
-
-Every constant type is a child of the |socket-constant| type.
-
-@c () => (socket-constant make-socket-constant socket-constant?
-	  socket-constant-value)
-@<Datatype definitions@>=
-(define-record-type socket-constant (fields (immutable value)))
-
 @** Socket Procedures.
 There are a number of socket programming functions that we bind and
 wrap here. The following table matches the foreign system call to the
@@ -609,7 +624,7 @@ its a bad socket, but otherwise, we need to build the appropriate
 struture and set any options. In this case, we default to nonblocking
 sockets, while most BSD sockets systems start in blocking mode.
 
-@c (socket-domain? socket-type? socket-protocol?) => (create-socket)
+@c () => (create-socket)
 @<External procedure definitions@>=
 (define (create-socket domain type protocol)
   @<Check |create-socket| arguments@>
@@ -628,7 +643,7 @@ sockets, while most BSD sockets systems start in blocking mode.
 @ I do very simple argument checking of the |create-socket|
 arguments. 
 
-@c (domain type protocol socket-domain? socket-type? socket-protocol?)
+@c (domain type protocol)
 @<Check |create-socket| arguments@>=
 (define who 'create-socket)
 (unless (socket-domain? domain)
@@ -656,9 +671,7 @@ explicitly knowing the type of the domain beforehand.
 
 @ We predefine UNIX/Local and Internet IPV4 domain types.
 
-@c (%socket-domain/unix size-of/addr-un $socket-domain/local size-of/addr-un
-    %socket-domain/internet size-of/addr-in
-    make-socket-domain foreign->unix-address foreign->internet-address) =>
+@c () =>
    (socket-domain/unix socket-domain/local socket-domain/internet)
 @<Socket constants@>=
 (define socket-domain/unix
@@ -682,7 +695,7 @@ internal value.
 We set up a database to hold the registered domains and 
 allow for additional domains to be registered.
 
-@c (socket-domain?) => (register-socket-domain! socket-domain-db)
+@c () => (register-socket-domain! socket-domain-db)
 @<External procedure definitions@>=
 (define socket-domain-db
   (make-parameter '()))
@@ -698,15 +711,15 @@ allow for additional domains to be registered.
 
 @ We register only the two necessary ones right now.
 
-@c (register-socket-domain! socket-domain/unix socket-domain/internet)
+@c ()
 @<Register pre-defined socket domains@>=
 (register-socket-domain! socket-domain/unix)
 (register-socket-domain! socket-domain/internet)
 
 @ We'll want to be able to look these domains up by number.
 
-@c (socket-domain-db) => (lookup-domain)
-@<Internal procedure definitions@>=
+@c () => (lookup-domain)
+@<External procedure definitions@>=
 (define (lookup-domain val)
   (let ([res (assv val (socket-domain-db))])
     (and res (cdr res))))
@@ -715,15 +728,12 @@ allow for additional domains to be registered.
 transmits over the socket. See the |socket(2)| man page for 
 more details.
 
-@c (socket-constant) => (%socket-type make-socket-type socket-type?)
+@c () => (%socket-type make-socket-type socket-type?)
 @<Datatype definitions@>=
 (define-record-type (%socket-type make-socket-type socket-type?)
   (parent socket-constant))
 
-@ @c (make-socket-type
-      %socket-type/stream %socket-type/datagram 
-      %socket-type/sequence-packet %socket-type/raw
-      %socket-type/random)
+@ @c ()
      => (socket-type/stream socket-type/datagram
          socket-type/sequence-packet socket-type/raw
 	 socket-type/random)
@@ -747,7 +757,7 @@ number, so the user will not usually need to use the more complicated
 database searching tools in the next sections. Instead, we define a
 default protocol here for automatic protocol selection.
 
-@c (socket-constant) => (make-socket-protocol socket-protocol?)
+@c () => (make-socket-protocol socket-protocol?)
 @<Datatype definitions@>=
 (define-record-type 
   (%socket-protocol make-socket-protocol socket-protocol?)
@@ -777,8 +787,8 @@ each record in the protocol database.
 it into a |protocol-entry|. This is used in all of the protocol accessor 
 functions that need to return some protocol.
  
-@c (make-protocol-entry) => (foreign->protocol-entry)
-@<Procedures for manipulating or supporting datatypes@>=
+@c () => (foreign->protocol-entry)
+@<Datatype definitions@>=
 (define (foreign->protocol-entry x)
   (make-protocol-entry
     (foreign-protocol-entry-name x)
@@ -796,19 +806,22 @@ are two procedures that specifically enable this in the library.
 	  open-protocol-database close-protocol-database)
 @<External procedure definitions@>=
 (define (next-protocol-entry)
-  (when (windows?) (unsupported-feature 'next-protocol-entry))
-  (foreign->protocol-entry ($getprotoent)))
+  (if-windows?
+    (unsupported-feature 'next-protocol-entry)
+    (foreign->protocol-entry ($getprotoent))))
 (define (get-protocol-by-name name)
   (foreign->protocol-entry ($getprotobyname name)))
 (define (get-protocol-by-constant proto)
   (foreign->protocol-entry 
     ($getprotobynumber (socket-constant-value proto))))
 (define (open-protocol-database keep-alive?)
-  (when (windows?) (unsupported-feature 'open-protocol-database))
-  ($setprotoent keep-alive?))
+  (if-windows?
+    (unsupported-feature 'open-protocol-database)
+    ($setprotoent keep-alive?)))
 (define (close-protocol-database)
-  (when (windows?) (unsupported-feature 'close-protocol-database))
-  ($endprotoent))
+  (if-windows?
+    (unsupported-feature 'close-protocol-database)
+    ($endprotoent)))
 
 @* 2 Binding and listening to sockets.
 Binding sockets works with a fairly direct mapping from the traditional
@@ -1021,7 +1034,7 @@ procedure isn't very complicated.
 well as shutdown methods for reading, writing, and reading/writing
 combined.
 
-@c () => (shutdoown-method make-shutdown-method shutdown-method?)
+@c () => (shutdown-method make-shutdown-method shutdown-method?)
 @<Datatype definitions@>=
 (define-record-type shutdown-method (parent socket-constant))
 
@@ -1071,7 +1084,7 @@ technique as with |accept-socket| to choose whether to go with a
 blocking optimized version or the straight |sendto(2)| call. Otherwise
 the basic mapping of the datatypes is fairly standard.
 
-@c (sock buf flags fa fa-len socket-fd)
+@c (sock buf flags fa fa-len)
 @<Convert datatypes and jump to the right foreign function@>=
 ((if (socket-nonblocking? sock) $sendto $sendto-blocking)
   (socket-fd sock) buf (bytevector-length buf)
@@ -1235,7 +1248,7 @@ and returns the value of that option for that socket.
 This function correlates to the |getsockopt(2)| system call.
 
 @c () => (get-socket-option)
-@<Procedures for manipulating or supporting datatypes@>=
+@<Datatype definitions@>=
 (define (get-socket-option sock opt)
   (let ([len (socket-option-foreign-size opt)])
     (let ([fbuf (foreign-alloc len)] 
@@ -1270,7 +1283,7 @@ it works the same way and uses it internally.
 \noindent The |set-socket-option!| procedure does not return a value.
 
 @c () => (set-socket-option!)
-@<Procedures for manipulating or supporting datatypes@>=
+@<Datatype definitions@>=
 (define (set-socket-option! sock opt val)
   (let-values ([(buf buf-len) ((socket-option-foreign-maker opt) val)])
     (call-with-errno
@@ -1292,7 +1305,7 @@ options is not recommended or  encouraged. They exist here for
 implementing some low-level behavior for higher  level abstractions.
 
 @c () => (set-socket-nonblocking!)
-@<Procedures for manipulating or supporting datatypes@>=
+@<Datatype definitions@>=
 (define (set-socket-nonblocking! sock val)
   (call-with-errno 
     (lambda () 
@@ -1417,7 +1430,7 @@ relative to the library's location. We need this at the meta level since
 that is where we are going to be doing the loading and importing.
 
 @c () => (resolve)
-@<Foreign code initialization@>=
+@<Foreign code utilities@>=
 (meta define (resolve name)
   (let loop ([dirs (source-directories)])
     (cond
@@ -1435,7 +1448,7 @@ code is different depending on whether we have a convention or not,
 we'll define that helper here.
 
 @c () => (define-foreign-values)
-@<Foreign code initialization@>=
+@<Foreign code utilities@>=
 (define-syntax define-foreign-values
   (syntax-rules ()
     [(_ shared-object (conv proc-name) type binding ...)
@@ -1474,7 +1487,7 @@ then needs to bind the resulting value to the original name provided.
 @ Finally, we need a definition for |define-bindings|.
 
 @c () => (define-bindings)
-@<Foreign code initialization@>=
+@<Foreign code utilities@>=
 (define-syntax define-bindings
   (syntax-rules ()
     [(_ get) (begin)]
@@ -1505,22 +1518,22 @@ must be defined for our library.
 (define-syntax (define-constants x)
   (syntax-case x ()
     [(k head ...)
-     (with-implicit (k define-foreign-values)
-       #'(define-foreign-values head ... int
-	   $error-again $error-in-progress $error-would-block #;$file-get-flag
-	   $file-set-flag $format-message-allocate-buffer
-	   $format-message-from-system $ipproto-ip $ipproto-raw $ipproto-tcp
-	   $ipproto-udp $option-non-blocking $socket-error $sol-socket
-	   %ai/canonname %ai/numerichost %ai/passive %msg/dont-route %msg/dont-wait
-	   %msg/out-of-band %msg/peek %msg/wait-all %shutdown/read
-	   %shutdown/read&write %shutdown/write %socket-domain/internet
-	   %socket-domain/internet-v6 %socket-domain/local %socket-domain/unix
-	   %socket-type/datagram %socket-type/random %socket-type/raw
-	   %socket-type/sequence-packet %socket-type/stream %somaxconn af-inet
-	   af-unix invalid-socket size-of/addr-in size-of/addr-un size-of/addrinfo
-	   size-of/integer size-of/ip size-of/pointer size-of/port size-of/protoent
-	   size-of/sa-family size-of/size-t size-of/sockaddr-in size-of/sockaddr-un
-	   size-of/socklen-t size-of/wsa-data unix-max-path))]))
+     (datum->syntax #'k
+       `(define-foreign-values ,@@(syntax->datum #'(head ...)) int
+	  $error-again $error-in-progress $error-would-block #;$file-get-flag
+	  $file-set-flag $format-message-allocate-buffer
+	  $format-message-from-system $ipproto-ip $ipproto-raw $ipproto-tcp
+	  $ipproto-udp $option-non-blocking $socket-error $sol-socket
+	  %ai/canonname %ai/numerichost %ai/passive %msg/dont-route %msg/dont-wait
+	  %msg/out-of-band %msg/peek %msg/wait-all %shutdown/read
+	  %shutdown/read&write %shutdown/write %socket-domain/internet
+	  %socket-domain/internet-v6 %socket-domain/local %socket-domain/unix
+	  %socket-type/datagram %socket-type/random %socket-type/raw
+	  %socket-type/sequence-packet %socket-type/stream %somaxconn af-inet
+	  af-unix invalid-socket size-of/addr-in size-of/addr-un size-of/addrinfo
+	  size-of/integer size-of/ip size-of/pointer size-of/port size-of/protoent
+	  size-of/sa-family size-of/size-t size-of/sockaddr-in size-of/sockaddr-un
+	  size-of/socklen-t size-of/wsa-data unix-max-path))]))
 (meta-cond
   [(windows?)
    (define-constants "socket-ffi-values.dll" (__cdecl "_get_ffi_value"))]
@@ -1790,8 +1803,8 @@ work. Unfortunately, supporting Windows makes our life miserable, yet again.
 To aleviate some of this misery, the following macros allow me to hide away 
 some of the details of supporting both platforms.
 
-@c () => (define-posix-only define-ffi)
-@<Foreign code initialization@>=
+@c () => (define-ffi)
+@<Foreign code utilities@>=
 (define-syntax define-ffi
   (syntax-rules ()
     [(_ name ffiname in out)
@@ -1860,5 +1873,263 @@ This is only necessary if we are on a threaded version of Chez Scheme,
   (foreign-procedure "recvfrom_block" 
 		     (fixnum u8* fixnum fixnum uptr uptr)
 		     int))
+
+@* 2 Foreign Data Utilities.  The following functions help in manage the 
+foreign data structures that map to our normal data definitions.  This 
+includes constructing, accessing, and deallocating them.  Most foreign 
+data structures are allocated on the heap and can thus be removed by 
+using the |foreign-free| function.
+
+@* 3 Foreign UNIX Addresses. To start, let's define a constructor 
+for the foreign UNIX address structures.  We are copying the following C 
+structure:
+
+\medskip\verbatim
+#define UNIX_PATH_MAX 108
+struct sockaddr_un {
+	sa_family_t sun_family;               /* AF_UNIX */
+	char        sun_path[UNIX_PATH_MAX];  /* pathname */
+};
+!endverbatim\medskip
+
+\noindent The |sun_family| always maps to the |af-unix| constant 
+and the size of the path is restricted to |unix-max-path|.
+
+@c () 
+   => (make-foreign-unix-address)
+@<Foreign functions@>=
+(define make-foreign-unix-address 
+  (let ([$strcpy (foreign-procedure "strcpy" (uptr string) void)])
+    (lambda (path)
+      (let ([res (foreign-alloc size-of/sockaddr-un)]
+            [path-len (string-length path)])
+        (assert (< path-len unix-max-path))
+        (foreign-set! 'unsigned-short res 0 af-unix)
+        ($strcpy (+ res size-of/sa-family) path)
+        res))))
+
+@ We have only one accessor for the structure, and we comfortably deviate 
+from the C name here for the sake of normal Scheme naming patterns.
+
+@c () => (foreign-unix-address-path)
+@<Foreign functions@>=
+(define foreign-unix-address-path
+  (let ([$strncpy (foreign-procedure "strncpy" (u8* uptr fixnum) string)])
+    (lambda (addr)
+      ($strncpy (make-bytevector unix-max-path 0) 
+                (+ addr size-of/sa-family)
+                unix-max-path))))
+
+@* 3 Foreign INET4 Addresses.  Next, we define the constructor for INET4 
+foreign addresses.  We are following this pattern of the INET4 internet 
+address C structure.
+
+\medskip\verbatim
+struct sockaddr_in {
+	sa_family_t     sin_family; /* address family: AF_INET */
+	in_port_t       sin_port;   /* port in network byte order */
+	struct in_addr  sin_addr;   /* internet address */
+};
+
+struct in_addr {
+	uint32_t        s_addr;     /* address in network byte order */
+};
+!endverbatim\medskip
+
+@c ()
+   => (make-foreign-ipv4-address)
+@<Foreign functions@>=
+(define (make-foreign-ipv4-address port ip)
+  (let ([res (foreign-alloc size-of/sockaddr-in)])
+    (foreign-set! 'unsigned-short res 0 af-inet)
+    (foreign-set! 'unsigned-16 
+                  res 
+                  (foreign-sizeof 'unsigned-short)
+                  (host->network/u16 port))
+    (foreign-set! 'unsigned-32
+                  res
+                  (+ (foreign-sizeof 'unsigned-short)
+                     (foreign-sizeof 'unsigned-16))
+                  (host->network/u32 ip))
+    res))
+    
+
+@ There are two accessors for the port and the internet address. 
+
+@c () => (foreign-ipv4-address-ip foreign-ipv4-address-port)
+@<Foreign functions@>=
+(define (foreign-ipv4-address-ip addr)
+  (network->host/u32
+    (foreign-ref 'unsigned-32 
+                 addr
+                 (+ (foreign-sizeof 'unsigned-short) 
+                    (foreign-sizeof 'unsigned-16)))))
+
+(define (foreign-ipv4-address-port addr)
+  (network->host/u16
+    (foreign-ref 'unsigned-16
+                 addr
+                 (foreign-sizeof 'unsigned-short))))
+
+@ The above utilities require tools for converting too and from the 
+network byte orders.  We do this using the following helpers.
+
+@c () => (host->network/u16 host->network/u32
+          network->host/u16 network->host/u32)
+@<Foreign functions@>=
+(define host->network/u16
+  (if (eq? (native-endianness) (endianness big))
+      (lambda (x) x)
+      (lambda (x)
+        (let ([buf (make-bytevector 2)])
+          (bytevector-u16-set! buf 0 x (endianness big))
+          (bytevector-u16-ref buf 0 (native-endianness))))))
+
+(define host->network/u32
+  (if (eq? (native-endianness) (endianness big))
+      (lambda (x) x)
+      (lambda (x)
+        (let ([buf (make-bytevector 4)])
+          (bytevector-u32-set! buf 0 x (endianness big))
+          (bytevector-u32-ref buf 0 (native-endianness))))))
+          
+(define network->host/u32 host->network/u32)
+(define network->host/u16 host->network/u16)
+
+@* 3 Foreign address information structures. These procedures are used to 
+manage the foreign address information structures.
+
+@c () => 
+   (make-foreign-pointer foreign-pointer-value make-foreign-address-info
+    foreign-address-info-canonical-name foreign-address-info-next
+    foreign-address-info-domain foreign-address-info-type 
+    foreign-address-info-protocol foreign-address-info-address
+    foreign-address-info-address-length)
+@<Foreign functions@>=
+(define (make-foreign-pointer)
+  (foreign-alloc (foreign-sizeof 'void*)))
+
+(define (foreign-pointer-value x)
+  (foreign-ref 'void* x 0))
+  
+(define family-offset (foreign-sizeof 'int))
+(define type-offset (+ family-offset (foreign-sizeof 'int)))
+(define proto-offset (+ type-offset (foreign-sizeof 'int)))
+(define addrlen-offset (+ proto-offset (foreign-sizeof 'int)))
+(define addr-offset (+ addrlen-offset (foreign-sizeof 'unsigned-long)))
+(define name-offset (+ addr-offset (foreign-sizeof 'void*)))
+(define next-offset (+ name-offset (foreign-sizeof 'void*)))
+  
+(define (make-foreign-address-info 
+          flags family type proto addrlen addr name next)
+  (let ([res (foreign-alloc size-of/addrinfo)])
+    (foreign-set! 'int res 0 flags)
+    (foreign-set! 'int res family-offset family)
+    (foreign-set! 'int res type-offset type)
+    (foreign-set! 'int res proto-offset proto)
+    (foreign-set! 'unsigned-long res addrlen-offset addrlen)
+    (foreign-set! 'void* res addr-offset addr)
+    (foreign-set! 'void* res name-offset name)
+    (foreign-set! 'void* res next-offset next)
+    res))
+
+(define (foreign-address-info-canonical-name addrinfo)
+  (let ([ptr (foreign-ref 'void* addrinfo name-offset)])
+    (if (zero? ptr) #f (get-foreign-string ptr))))
+
+(define (foreign-address-info-domain addrinfo)
+  (foreign-ref 'int addrinfo family-offset))
+(define (foreign-address-info-type addrinfo)
+  (foreign-ref 'int addrinfo type-offset))
+(define (foreign-address-info-protocol addrinfo)
+  (foreign-ref 'int addrinfo proto-offset))
+(define (foreign-address-info-address addrinfo)
+  (foreign-ref 'void* addrinfo addr-offset))
+(define (foreign-address-info-address-length addrinfo)
+  (foreign-ref 'unsigned-long addrinfo addrlen-offset))
+(define (foreign-address-info-next addrinfo)
+  (foreign-ref 'void* addrinfo next-offset))
+
+@* 3 Foreign protocol database structures.  The following functions are needed 
+to manage foreign protocol databases.
+
+@c () =>
+   (foreign-protocol-entry-name
+    foreign-protocol-entry-aliases
+    foreign-protocol-entry-protocol)
+@<Foreign functions@>=
+(define (foreign-protocol-entry-name x)
+  (get-foreign-string (foreign-pointer-value x)))
+
+(define (foreign-protocol-entry-aliases x)
+  (do ([ptr (foreign-ref 'void* x (foreign-sizeof 'void*))
+            (+ ptr (foreign-sizeof 'void*))]
+       [res '()  (cons (get-foreign-string (foreign-pointer-value ptr))
+                       res)])
+      [(zero? (foreign-pointer-value ptr)) (reverse res)]))
+
+(define (foreign-protocol-entry-protocol x)
+  (foreign-ref 'int x (* 2 (foreign-sizeof 'void*))))
+
+@* 3 Managing foreign strings and bufers.  
+It's somewhat awkward to get a C string, 
+so we use the following function to abstract this functionality.
+
+@c () => (get-foreign-string)
+@<Foreign functions@>=
+(define get-foreign-string
+  (let ([$strlen (foreign-procedure "strlen" (uptr) fixnum)]
+        [$strcpy (foreign-procedure "strcpy" (u8* uptr) string)])
+    (lambda (x)
+      (let* ([len ($strlen x)]
+             [buf (make-bytevector (1+ len))])
+        ($strcpy buf x)))))
+
+@ We sometimes need to allocate buffers of appropriate size and type.  
+Such as those used for value-result parameters in foreign C functions. 
+We define some conveniences here for doing this.
+
+@c () => (make-foreign-size-buffer foreign-size-buffer-value)
+@<Foreign functions@>=
+(define (make-foreign-size-buffer size)
+  (let ([res (foreign-alloc (foreign-sizeof 'unsigned-long))])
+    (foreign-set! 'unsigned-long res 0 size)
+    res))
+
+(define (foreign-size-buffer-value buf)
+  (foreign-ref 'unsigned-long buf 0))
+
+@* 3 Blocking sockets.  The following helper is used to manage blocking 
+sockets. 
+
+@c () => (%set-blocking)
+@<Foreign functions@>=
+(meta-cond
+  [(windows?)
+   (define (%set-blocking fd yes?)
+     (let ([buf (make-foreign-size-buffer (if yes? 0 1))])
+       ($fcntl fd $file-set-flag buf)))]
+  [else
+    (define (%set-blocking fd yes?)
+      ($fcntl fd $file-set-flag (if yes? 0 $option-non-blocking)))])
+
+@* Windows Initialization.  When working on Windows, there is an 
+initialization sequence that we have to do in order to use any of the 
+sockets functionality.  It looks like this:
+
+@c () => ()
+@<Foreign code initialization@>=
+(meta-cond
+  [(windows?)
+   (define $wsa-startup
+     (foreign-procedure __stdcall "WSAStartup"
+       (unsigned-16 uptr)
+       int))
+   (define winsock-version (+ (bitwise-arithmetic-shift 2 8) 2))
+   (let ([buf (foreign-alloc size-of/wsa-data)])
+     ($wsa-startup winsock-version buf)
+     (foreign-free buf))]
+  [else (void)])
+
 
 @* Index.
