@@ -1367,9 +1367,63 @@ we need to consider these system functions. The first and most obvious
 reason for accessing the system libraries is the system constants that 
 are stored there. We base a number of elements on constants, and we need 
 these constants to do our work. We use a form called |define-foreign-values|
-to help extract these elements from the system.
-This form is a  binding construct designed to extract results from foreign
-code 
+to help extract these elements from the system.  Additionally, there are 
+a few procedures that are necessary at runtime, which help us to support
+blocking I/O calls on Threaded systems.  We separate out the foreign 
+values that we can determine at compile time from those that we need at 
+runtime into two libraries.  The compile time values are stored in a 
+file called ``socket-ffi-values'' and the runtime ``stub'' is stored 
+in a file called ``sockets-stub''.  The source for these files is generated 
+as a side effect of tangling this document.  However, the names of these 
+files will be differrent depending on what platform compiled them.  
+Moreover, while we have to ensure that we load the compile time files at 
+compile time, we have to ensure that we do not need to do this at runtime. 
+We need to compile things based on the machine type we receive, so it is 
+helpful to have a nice way of asking about that. We also want an easy way 
+to stay in definition mode. 
+
+@c () => ()
+@<Foreign code utilities@>=
+(define-syntax (on-machine x)
+  (syntax-case x (else)
+    [(_) #'(begin)]
+    [(_ (else exp)) #'(begin (define-syntax (t x) exp) (t))]
+    [(_ ((type ...) exp) rest ...)
+     (if (memq (machine-type) (syntax->datum #'(type ...)))
+         #'(begin (define-syntax (t x) exp) (t))
+         #'(on-machine rest ...))]))
+(define-syntax fake-define
+  (syntax-rules ()
+    [(_ exp) (define dummy (begin exp (void)))]))
+
+@ Firstly, we need to first load the normal standard library, which is 
+slightly different on different platforms.
+
+@c () => ()
+@<Foreign code utilities@>=
+(on-machine
+  [(i3nt ti3nt a6nt ta6nt) #'(fake-define (load-shared-object "crtdll.dll"))]
+  [(i3le ti3le a6le ta6le) #'(fake-define (load-shared-object "libc.so.6"))]
+  [(i3osx ti3osx a6osx ta6osx)
+   #'(fake-define (load-shared-object "libc.dylib"))]
+  [else #'(fake-define (load-shared-object "libc.so"))])
+
+@ Next, we need to load the FFI values that are used at compile time, as 
+well as the blocking socket operations and other stub procedures that we 
+need defined at runtime.
+
+@c () => ()
+@<Foreign code utilities@>=
+(on-machine
+  [(i3nt ti3nt a6nt ta6nt)
+   (begin (load-shared-object "socket-ffi-values.dll") 
+          #'(fake-define (load-shared-object "sockets-stub.dll")))]
+  [(i3osx ti3osx ta6osx a6osx)
+   (begin (load-shared-object "socket-ffi-values.dylib") 
+          #'(fake-define (load-shared-object "sockets-stub.dylib")))]
+  [else 
+   (begin (load-shared-object "socket-ffi-values.so") 
+          #'(fake-define (load-shared-object "sockets-stub.so")))])
 
 @* 2 Binding Foreign Values.
 We define a single syntax |define-foreign-values| that binds
@@ -1833,8 +1887,8 @@ some of the details of supporting both platforms.
 (define-ffi $recvfrom "recvfrom" (fixnum u8* fixnum fixnum uptr uptr) fixnum)
 (define-ffi $getsockopt "getsockopt" (int int int uptr uptr) int)
 (define-ffi $setsockopt "setsockopt" (int int int uptr int) int)
-(define-ffi $close "closesocket" (unsigned) int)
-(define-ffi $fcntl "ioctlsocket" (unsigned unsigned unsigned) int)
+(define-ffi $close "close" (unsigned) int)
+(define-ffi $fcntl "ioctl" (unsigned unsigned unsigned) int)
 (meta-cond
   [(windows?) (define $gai_strerror errno-message)]
   [else (define $gai_strerror (foreign-procedure "gai_strerror" (int) string))])
