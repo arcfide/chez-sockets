@@ -1309,9 +1309,7 @@ implementing some low-level behavior for higher  level abstractions.
 (define (set-socket-nonblocking! sock val)
   (call-with-errno 
     (lambda () 
-1      (if val 
-          (%set-blocking (socket-fd sock) #f)
-          (%set-blocking (socket-fd sock) #t)))
+      (%set-blocking (socket-fd sock) (not val)))
     (lambda (ret err)
       (when (= ret $socket-error)
         (socket-error 'set-socket-nonblocking! 'fcntl err))
@@ -1887,11 +1885,15 @@ some of the details of supporting both platforms.
 (define-ffi $recvfrom "recvfrom" (fixnum u8* fixnum fixnum uptr uptr) fixnum)
 (define-ffi $getsockopt "getsockopt" (int int int uptr uptr) int)
 (define-ffi $setsockopt "setsockopt" (int int int uptr int) int)
-(define-ffi $close "close" (unsigned) int)
-(define-ffi $fcntl "ioctl" (unsigned unsigned unsigned) int)
 (meta-cond
-  [(windows?) (define $gai_strerror errno-message)]
-  [else (define $gai_strerror (foreign-procedure "gai_strerror" (int) string))])
+  [(windows?) 
+   (define $gai_strerror errno-message)
+   (define-ffi $close "closesocket" (unsigned) int)
+   (define-ffi $fcntl "ioctlsocket" (unsigned unsigned unsigned) int)]
+  [else 
+   (define $gai_strerror (foreign-procedure "gai_strerror" (int) string))
+   (define-ffi $close "close" (int) int)
+   (define-ffi $fcntl "fcntl" (int int long) int)])
 
 @ Unfortunately, there are some things that Windows just doesn't support at all.
 
