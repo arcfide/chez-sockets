@@ -1923,18 +1923,30 @@ This is only necessary if we are on a threaded version of Chez Scheme,
 @c () => 
    ($accept-blocking $connect-blocking $sendto-blocking $recvfrom-blocking)
 @<Foreign functions@>=
-(define $accept-blocking
-  (foreign-procedure "accept_block" (fixnum uptr uptr) int))
-(define $connect-blocking
-  (foreign-procedure "connect_block" (fixnum uptr fixnum) int))
-(define $sendto-blocking
-  (foreign-procedure "sendto_block" 
-		     (fixnum u8* fixnum fixnum uptr fixnum) 
-		     int))
-(define $recvfrom-blocking
-  (foreign-procedure "recvfrom_block" 
-		     (fixnum u8* fixnum fixnum uptr uptr)
-		     int))
+(meta-cond
+  [(threaded?)
+   (define $accept-blocking
+     (foreign-procedure "accept_block" (fixnum uptr uptr) int))
+   (define $connect-blocking
+     (foreign-procedure "connect_block" (fixnum uptr fixnum) int))
+   (define $sendto-blocking
+     (foreign-procedure "sendto_block" 
+			(fixnum u8* fixnum fixnum uptr fixnum) 
+			int))
+   (define $recvfrom-blocking
+     (foreign-procedure "recvfrom_block" 
+			(fixnum u8* fixnum fixnum uptr uptr)
+			int))]
+  [else 
+   (define $accept-blocking
+     (foreign-procedure "accept" (fixnum uptr uptr) int))
+   (define $connect-blocking
+     (foreign-procedure "connect" (fixnum uptr fixnum) int))
+   (define $sendto-blocking
+     (foreign-procedure "sendto" (fixnum u8* fixnum fixnum uptr fixnum) int))
+   (define $recvfrom-blocking
+     (foreign-procedure "recvfrom" (fixnum u8* fixnum fixnum uptr uptr) int))])
+
 
 @* 2 Foreign Data Utilities.  The following functions help in manage the 
 foreign data structures that map to our normal data definitions.  This 
