@@ -41,10 +41,10 @@
   <dd>ISC</dd>
   <dt>Download</dt>
   <dd>
-    <a href="ftp://ftp.sacrideo.us/chez-sockets/chez-sockets-1.0.tar.gz">
+    <a href="ftp://ftp.sacrideo.us/chez-sockets/chez-sockets-1.0.tar.xz">
       Source
     </a> <br />
-    <a href="ftp://ftp.sacrideo.us/chez-sockets/chez-sockets-ta6le-1.0.tar.gz">
+    <a href="ftp://ftp.sacrideo.us/chez-sockets/chez-sockets-ta6le-1.0.tar.xz">
       Threaded 64-bit Linux
     </a>
   </dd>
@@ -58,7 +58,31 @@
   <dd><a href="https://github.com/arcfide/chez-sockets">GitHub</a></dd>
 </dl>
 
-<p>XXX</p>
+<p>Chez Sockets is a full-featured, extensible, BSD sockets library 
+for Chez Scheme. It is designed to be Schemely, full featured, and 
+layered to enable both high-level usage as well as low-level sockets 
+work. It is portable across Windows and UNIX machines as well 
+as 64-bit and 32-bit machines. </p>
+
+<p>This system was inspired in part by the rants of Taylor Campbell, 
+the existence of scsh's sockets abstraction, and the general need felt 
+by the author for a good sockets library that is easy to use, but also 
+powerful enough to be a complete drop in replacement for BSD sockets.</p>
+
+<p>The system was designed to work as a compiled library that could be 
+extended without the user needing to hack the source code directly. 
+However, the source code is written in what the author hopes is a very 
+clear, literate style that should allow easy understanding of the code 
+and the approaches used. It would be suitable for a source level exposition 
+on sockets and FFI programming in Scheme.</p>
+
+<h2>Important Notes</h2>
+
+<p>The current version is the first version released under the ChezWEB 
+2 framework. Please note that some features that should exist in this 
+version do not, such as support for non-threaded versions of Chez Scheme.
+The author is working to rectify these minor issues.</p>
+
 
 </div>
 
