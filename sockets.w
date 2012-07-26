@@ -1406,22 +1406,28 @@ slightly different on different platforms.
    #'(fake-define (load-shared-object "libc.dylib"))]
   [else #'(fake-define (load-shared-object "libc.so"))])
 
-@ Next, we need to load the FFI values that are used at compile time, as 
-well as the blocking socket operations and other stub procedures that we 
-need defined at runtime.
+@ Next, we need to load the FFI values that are used at compile time. We 
+have do use a different extension based on the machine type that we have.
 
 @c () => ()
 @<Foreign code utilities@>=
 (on-machine
-  [(i3nt ti3nt a6nt ta6nt)
-   (begin (load-shared-object "socket-ffi-values.dll") 
-          #'(fake-define (load-shared-object "sockets-stub.dll")))]
-  [(i3osx ti3osx ta6osx a6osx)
-   (begin (load-shared-object "socket-ffi-values.dylib") 
-          #'(fake-define (load-shared-object "sockets-stub.dylib")))]
-  [else 
-   (begin (load-shared-object "socket-ffi-values.so") 
-          #'(fake-define (load-shared-object "sockets-stub.so")))])
+  [(i3nt ti3nt a6nt ta6nt) (load-shared-object "socket-ffi-values.dll")]
+  [(i3osx ti3osx ta6osx a6osx) (load-shared-object "socket-ffi-values.dylib")]
+  [else (load-shared-object "socket-ffi-values.so")])
+
+@ On the threaded versions, we must load a stub file that allows us to 
+deal with the blocking FFI calls appropriately.
+
+@c () => ()
+@<Foreign code utilities@>=
+(meta-cond
+  [(threaded?)
+   (fake-define
+     (load-shared-object 
+       (string-append "sockets-stub."
+	 (on-machine 
+	   [(ti3nt) "dll"] [(ti3osx ta6osx) "dylib"] [else "so"]))))])
 
 @* 2 Binding Foreign Values.
 We define a single syntax |define-foreign-values| that binds
