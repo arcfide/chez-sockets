@@ -1392,7 +1392,7 @@ to stay in definition mode.
          #'(on-machine rest ...))]))
 (define-syntax fake-define
   (syntax-rules ()
-    [(_ exp) (define dummy (begin exp (void)))]))
+    [(_ exp ...) (define dummy (begin exp ... (void)))]))
 
 @ Firstly, we need to first load the normal standard library, which is 
 slightly different on different platforms.
@@ -1412,22 +1412,24 @@ have do use a different extension based on the machine type that we have.
 @c () => ()
 @<Foreign code utilities@>=
 (on-machine
-  [(i3nt ti3nt a6nt ta6nt) (load-shared-object "socket-ffi-values.dll")]
-  [(i3osx ti3osx ta6osx a6osx) (load-shared-object "socket-ffi-values.dylib")]
-  [else (load-shared-object "socket-ffi-values.so")])
+  [(i3nt ti3nt a6nt ta6nt)
+   (begin (load-shared-object "socket-ffi-values.dll") #'(fake-define))]
+  [(i3osx ti3osx ta6osx a6osx)
+   (begin (load-shared-object "socket-ffi-values.dylib") #'(fake-define))]
+  [else (begin (load-shared-object "socket-ffi-values.so") #'(fake-define))])
 
 @ On the threaded versions, we must load a stub file that allows us to 
 deal with the blocking FFI calls appropriately.
 
 @c () => ()
 @<Foreign code utilities@>=
-(meta-cond
-  [(threaded?)
-   (fake-define
-     (load-shared-object 
-       (string-append "sockets-stub."
-	 (on-machine 
-	   [(ti3nt) "dll"] [(ti3osx ta6osx) "dylib"] [else "so"]))))])
+(on-machine
+  [(ti3nt ta6nt) #'(fake-define (load-shared-object "sockets-stub.dll"))]
+  [(ti3osx ta6osx) #'(fake-define (load-shared-object "sockets-stub.dylib"))]
+  [else
+    (if (threaded?)
+        #'(fake-define (load-shared-object "sockets-stub.so"))
+        #'(fake-define))])
 
 @* 2 Binding Foreign Values.
 We define a single syntax |define-foreign-values| that binds
